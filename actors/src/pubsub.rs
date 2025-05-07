@@ -47,7 +47,7 @@
 
 use std::collections::HashMap;
 
-use futures::future::{BoxFuture, join_all};
+use futures::future::BoxFuture;
 use kameo::{error::Infallible, prelude::*};
 
 type Subscriber<M> = Box<dyn MessageSubscriber<M> + Send>;
@@ -99,15 +99,14 @@ impl<M> PubSub<M> {
     where
         M: Clone + Send + 'static,
     {
-        let results = join_all(self.subscribers.iter_mut().filter_map(
-            |(id, (subscriber, filter))| {
-                filter(&msg).then_some({
-                    let msg = msg.clone();
-                    async move { (*id, subscriber.tell(msg).await) }
-                })
-            },
-        ))
-        .await;
+        let mut results = Vec::new();
+        for (id, (subscriber, filter)) in self.subscribers.iter_mut() {
+            if filter(&msg) {
+                let msg = msg.clone();
+                let result = subscriber.tell(msg).await;
+                results.push((*id, result));
+            }
+        }
         for (id, result) in results.into_iter() {
             match result {
                 Ok(_) => {}
